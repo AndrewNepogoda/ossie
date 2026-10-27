@@ -38,6 +38,10 @@ including keys in nested objects, so an earlier value is not silently lost.
 The YAML loader preserves aliases, repeated merge directives and explicit
 overrides of merged keys.
 
+`OssieOntologyDocument` mirrors `ontology/ontology.json`: concepts (`OssieConcept`),
+the relationships among them (`OssieOntologyRelationship`, distinct from the dataset
+join `OssieRelationship`), and, deprecated, embedded `ontology_mappings`.
+
 ## Development
 
 ### Prerequisites

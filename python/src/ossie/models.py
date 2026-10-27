@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 import json
 import math
 from enum import Enum
@@ -234,7 +236,7 @@ class OssieExpression(BaseModel):
     dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
-    def _require_sql_or_dialects(self) -> "OssieExpression":
+    def _require_sql_or_dialects(self) -> OssieExpression:
         if self.sql is None and not self.dialects:
             raise ValueError("expression requires at least one of 'sql' or 'dialects'")
         return self
@@ -343,15 +345,19 @@ class OssieSemanticModel(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
+# The specification version every Ossie document declares. Each schema pins it with
+# `const`, so a document may not declare any other version. Mirrored as a Literal
+# rather than a plain str, which would let the package serialize a version the
+# schema rejects.
+OssieVersion = Literal["0.2.0.dev0"]
+
+
 class OssieDocument(OssieSemanticModel):
     """A single semantic model with document metadata at the root."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # The schema pins this with `const`, so a document may not declare any other
-    # version. Mirrored as a Literal rather than a plain str, which would let the
-    # package serialize a version the schema rejects.
-    version: Literal["0.2.0.dev0"] = "0.2.0.dev0"
+    version: OssieVersion = "0.2.0.dev0"
 
     @model_serializer(mode="wrap")
     def _serialize_document(self, handler: SerializerFunctionWrapHandler):
@@ -384,7 +390,7 @@ class OssieDocument(OssieSemanticModel):
         return self.model_dump_json(**kwargs)
 
     @classmethod
-    def from_ossie_yaml(cls, text: str) -> "OssieDocument":
+    def from_ossie_yaml(cls, text: str) -> OssieDocument:
         """Parse an Ossie YAML document, checking what pydantic alone cannot.
 
         The counterpart of :meth:`to_ossie_yaml`. ``model_validate`` stays lenient,
@@ -411,7 +417,7 @@ class OssieDocument(OssieSemanticModel):
         return cls._from_document(yaml.load(text, Loader=UniqueKeyLoader))
 
     @classmethod
-    def from_ossie_json(cls, text: str) -> "OssieDocument":
+    def from_ossie_json(cls, text: str) -> OssieDocument:
         """Parse an Ossie JSON document, checking what pydantic alone cannot.
 
         The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
@@ -420,7 +426,7 @@ class OssieDocument(OssieSemanticModel):
         return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
 
     @classmethod
-    def _from_document(cls, data: Any) -> "OssieDocument":
+    def _from_document(cls, data: Any) -> OssieDocument:
         for reason in (_NULL, _NON_FINITE):
             paths = [path for path, why in _invalid_properties(data) if why == reason]
             if paths:
@@ -434,3 +440,183 @@ class OssieDocument(OssieSemanticModel):
             # the schema lists it as required, so a document without one is invalid.
             raise ValueError("document is missing the required property: version")
         return cls.model_validate(data)
+
+
+def _require_any(model: BaseModel, *names: str) -> None:
+    """Mirror a schema `anyOf` of `required` lists: at least one of `names` is set."""
+    if all(getattr(model, name) is None for name in names):
+        listed = " or ".join(f"'{name}'" for name in names)
+        raise ValueError(f"{type(model).__name__} requires at least one of {listed}")
+
+
+# ---------------------------------------------------------------------------
+# Ontology (ontology/ontology.json)
+# ---------------------------------------------------------------------------
+
+
+class OssieConceptType(str, Enum):
+    """Whether a concept is an entity type or a value type."""
+
+    ENTITY_TYPE = "EntityType"
+    VALUE_TYPE = "ValueType"
+
+
+class OssieMultiplicity(str, Enum):
+    """Multiplicity constraint on the last role of an ontology relationship."""
+
+    MANY_TO_ONE = "ManyToOne"
+    ONE_TO_ONE = "OneToOne"
+
+
+class OssieRole(BaseModel):
+    """An additional role in an ontology relationship.
+
+    The first role is implicit: it is played by the concept the relationship is
+    declared under.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: str
+    # Needed only when the same concept plays more than one role in the relationship.
+    name: Optional[str] = None
+
+
+class OssieOntologyRelationship(BaseModel):
+    """Relationship between concepts, declared under the concept playing its first role.
+
+    Not to be confused with `OssieRelationship`, the join between two datasets of a
+    semantic model.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    description: Optional[str] = None
+    roles: Optional[list[OssieRole]] = None
+    multiplicity: Optional[OssieMultiplicity] = None
+    derived_by: Optional[list[str]] = None
+    requires: Optional[list[str]] = None
+    verbalizes: list[str]
+    iri: Optional[str] = None
+
+
+class OssieConcept(BaseModel):
+    """A concept and the relationships where it plays the first role.
+
+    The schema calls this node `OntologyComponent`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: str
+    type: OssieConceptType
+    description: Optional[str] = None
+    extends: Optional[list[str]] = None
+    derived_by: Optional[list[str]] = None
+    identify_by: Optional[list[str]] = None
+    requires: Optional[list[str]] = None
+    relationships: Optional[list[OssieOntologyRelationship]] = None
+    iri: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Ontology mappings (ontology/ontology.json)
+# ---------------------------------------------------------------------------
+
+
+class OssieReferentMapping(BaseModel):
+    """Maps logical constructs to an identifying relationship of an entity type.
+
+    A leaf carries an `expression`; a referent whose player is itself an entity
+    nests further `referent_mappings` instead.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    relationship: str
+    expression: Optional[str] = None
+    referent_mappings: Optional[list[OssieReferentMapping]] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_expression_or_referents(self) -> OssieReferentMapping:
+        _require_any(self, "expression", "referent_mappings")
+        return self
+
+
+class OssieObjectMapping(BaseModel):
+    """Identifies objects of a concept from the values of one or more fields."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: Optional[str] = None
+    referent_mappings: Optional[list[OssieReferentMapping]] = Field(default=None, min_length=1)
+    expression: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _require_expression_or_referents(self) -> OssieObjectMapping:
+        _require_any(self, "expression", "referent_mappings")
+        return self
+
+
+class OssieLinkMapping(BaseModel):
+    """A node in a tree of mappings to the links of ontology relationships.
+
+    A node's depth equals the arity of the relationship it names; each child extends
+    the tuple mapped by its parent by one role.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    relationship: Optional[str] = None
+    object_mapping: OssieObjectMapping
+    children: Optional[list[OssieLinkMapping]] = None
+
+
+class OssieConceptMapping(BaseModel):
+    """Mappings that populate one concept and the relationships grouped under it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    concept: str
+    object_mappings: Optional[list[OssieObjectMapping]] = Field(default=None, min_length=1)
+    link_mappings: Optional[list[OssieLinkMapping]] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_object_or_link_mappings(self) -> OssieConceptMapping:
+        _require_any(self, "object_mappings", "link_mappings")
+        return self
+
+
+class OssieOntologyMapping(BaseModel):
+    """A semantic model embedded in an ontology, with the mappings onto that ontology.
+
+    Deprecated by the schema, which accepts it only so existing documents continue
+    to validate. New mappings are standalone documents validated against
+    `ontology/mapping.json`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    # The schema embeds the whole core document here, `version` included.
+    semantic_model: OssieDocument
+    concept_mappings: list[OssieConceptMapping]
+
+
+class OssieOntologyDocument(BaseModel):
+    """An ontology: concepts, the relationships among them, and their rules."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: OssieVersion = "0.2.0.dev0"
+    name: str
+    description: Optional[str] = None
+    ai_context: Optional[OssieAIContext] = None
+    requires: Optional[list[str]] = None
+    ontology: list[OssieConcept] = Field(..., min_length=1)
+    # Deprecated by the schema; see `OssieOntologyMapping`.
+    ontology_mappings: Optional[list[OssieOntologyMapping]] = None
+    # Namespace prefix -> the IRI it abbreviates, for `iri` values written as QNames.
+    prefixes: Optional[dict[str, str]] = None
