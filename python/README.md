@@ -45,8 +45,9 @@ overrides of merged keys.
 the relationships among them (`OssieOntologyRelationship`, distinct from the dataset
 join `OssieRelationship`), and, deprecated, embedded `ontology_mappings`.
 
-`OssieSemanticModel` and `OssieOntology` both extend `OssieDocument`, which holds `version` and the `to_ossie_*` and `from_ossie_*` methods. An ontology
-file therefore loads with `OssieOntology.from_ossie_yaml(text)`, under the same checks.
+`OssieSemanticModel` and `OssieOntology` both extend `OssieDocument`, which holds
+`version` and the `to_ossie_*` and `from_ossie_*` methods. An ontology file
+therefore loads with `OssieOntology.from_ossie_yaml(text)`, under the same checks.
 
 ## Development
 
