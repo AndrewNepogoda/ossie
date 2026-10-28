@@ -24,7 +24,7 @@ import yaml
 from pydantic import ValidationError
 
 from ossie import (
-    OssieConcept,
+    OssieConceptComponent,
     OssieConceptMapping,
     OssieConceptType,
     OssieDocument,
@@ -173,7 +173,7 @@ def test_models_mirror_the_schema_properties() -> None:
     """
     models = {
         "": OssieOntologyModel,
-        "OntologyComponent": OssieConcept,
+        "OntologyComponent": OssieConceptComponent,
         "Relationship": OssieOntologyRelationship,
         "Role": OssieRole,
         "OntologyMap": OssieOntologyMapping,

@@ -502,7 +502,7 @@ class OssieOntologyRelationship(BaseModel):
     iri: Optional[str] = None
 
 
-class OssieConcept(BaseModel):
+class OssieConceptComponent(BaseModel):
     """A concept and the relationships where it plays the first role.
 
     The schema calls this node `OntologyComponent`.
@@ -613,7 +613,7 @@ class OssieOntologyModel(OssieDocument):
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     requires: Optional[list[str]] = None
-    ontology: list[OssieConcept] = Field(..., min_length=1)
+    ontology: list[OssieConceptComponent] = Field(..., min_length=1)
     # Deprecated by the schema; see `OssieOntologyMapping`.
     ontology_mappings: Optional[list[OssieOntologyMapping]] = None
     # Namespace prefix -> the IRI it abbreviates, for `iri` values written as QNames.
