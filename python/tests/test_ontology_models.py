@@ -31,11 +31,12 @@ from ossie import (
     OssieLinkMapping,
     OssieMultiplicity,
     OssieObjectMapping,
-    OssieOntologyDocument,
+    OssieOntology,
     OssieOntologyMapping,
     OssieOntologyRelationship,
     OssieReferentMapping,
     OssieRole,
+    OssieSemanticModel,
     OssieVersion,
 )
 
@@ -92,28 +93,55 @@ def ontology_data(document_data: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _dump(document: OssieOntologyDocument) -> dict:
+def _dump(document: OssieOntology) -> dict:
     return document.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
-def test_example_round_trips() -> None:
-    data = yaml.safe_load((_REPO / "examples" / "flights.ontology.yaml").read_text())
+@pytest.mark.parametrize("name", ["flights.ontology.yaml", "flights.yaml"])
+def test_example_round_trips(name: str) -> None:
+    text = (_REPO / "examples" / name).read_text()
 
-    assert _dump(OssieOntologyDocument.model_validate(data)) == data
+    ontology = OssieOntology.from_ossie_yaml(text)
+
+    assert yaml.safe_load(ontology.to_ossie_yaml()) == yaml.safe_load(text)
+    assert OssieOntology.from_ossie_json(ontology.to_ossie_json()) == ontology
+
+
+def test_documents_share_the_base_document() -> None:
+    assert issubclass(OssieSemanticModel, OssieDocument)
+    assert issubclass(OssieOntology, OssieDocument)
+
+
+@pytest.mark.parametrize(
+    ("text", "error", "message"),
+    [
+        (
+            "name: events\nontology:\n- {concept: Event, type: EntityType}\n",
+            ValueError,
+            "missing the required property: version",
+        ),
+        ("version: 0.2.0.dev0\nname: a\nname: b\n", yaml.constructor.ConstructorError, "duplicate"),
+        ("version: 0.2.0.dev0\nname: events\ndescription:\n", ValueError, "null.*: description"),
+    ],
+    ids=["missing-version", "duplicate-key", "null"],
+)
+def test_ontology_files_get_the_document_checks(text: str, error: type, message: str) -> None:
+    with pytest.raises(error, match=message):
+        OssieOntology.from_ossie_yaml(text)
 
 
 def test_embedded_mapping_carries_a_full_semantic_model_document(ontology_data: dict) -> None:
-    ontology = OssieOntologyDocument.model_validate(ontology_data)
+    ontology = OssieOntology.model_validate(ontology_data)
 
     semantic_model = ontology.ontology_mappings[0].semantic_model
-    assert isinstance(semantic_model, OssieDocument)
+    assert isinstance(semantic_model, OssieSemanticModel)
     assert semantic_model.version == "0.2.0.dev0"
-    assert OssieOntologyDocument.model_validate(_dump(ontology)) == ontology
+    assert OssieOntology.model_validate(_dump(ontology)) == ontology
 
 
 def test_serialization_omits_absent_fields_and_puts_version_first(ontology_data: dict) -> None:
     del ontology_data["ontology_mappings"]
-    ontology = OssieOntologyDocument.model_validate(ontology_data)
+    ontology = OssieOntology.model_validate(ontology_data)
 
     assert _dump(ontology) == ontology_data
     assert list(_dump(ontology))[0] == "version"
@@ -144,7 +172,7 @@ def test_models_mirror_the_schema_properties() -> None:
     the schema but not the model, and vice versa.
     """
     models = {
-        "": OssieOntologyDocument,
+        "": OssieOntology,
         "OntologyComponent": OssieConcept,
         "Relationship": OssieOntologyRelationship,
         "Role": OssieRole,
@@ -244,7 +272,7 @@ def test_required_properties(ontology_data: dict, path: tuple, key: str) -> None
     del container[key]
 
     with pytest.raises(ValidationError) as error:
-        OssieOntologyDocument.model_validate(ontology_data)
+        OssieOntology.model_validate(ontology_data)
 
     assert any(item["loc"] == (*path, key) for item in error.value.errors())
 
@@ -253,11 +281,11 @@ def test_ontology_requires_a_concept(ontology_data: dict) -> None:
     ontology_data["ontology"] = []
 
     with pytest.raises(ValidationError):
-        OssieOntologyDocument.model_validate(ontology_data)
+        OssieOntology.model_validate(ontology_data)
 
 
 def test_invalid_multiplicity_is_rejected(ontology_data: dict) -> None:
     ontology_data["ontology"][0]["relationships"][0]["multiplicity"] = "ManyToMany"
 
     with pytest.raises(ValidationError):
-        OssieOntologyDocument.model_validate(ontology_data)
+        OssieOntology.model_validate(ontology_data)

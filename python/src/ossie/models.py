@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import math
 from enum import Enum
-from typing import Annotated, Any, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Self, Union
 
 import yaml
 from pydantic import (
@@ -330,21 +330,6 @@ class OssieRelationship(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
-class OssieSemanticModel(BaseModel):
-    """Semantic model: the datasets, relationships, and metrics for one business domain."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    name: str = Field(..., min_length=1)
-    description: Optional[str] = None
-    ai_context: Optional[OssieAIContext] = None
-    datasets: list[OssieDataset] = Field(..., min_length=1)
-    relationships: Optional[list[OssieRelationship]] = None
-    # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
-    metrics: Optional[list[OssieMetric]] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
-
-
 # The specification version every Ossie document declares. Each schema pins it with
 # `const`, so a document may not declare any other version. Mirrored as a Literal
 # rather than a plain str, which would let the package serialize a version the
@@ -352,8 +337,11 @@ class OssieSemanticModel(BaseModel):
 OssieVersion = Literal["0.2.0.dev0"]
 
 
-class OssieDocument(OssieSemanticModel):
-    """A single semantic model with document metadata at the root."""
+class OssieDocument(BaseModel):
+    """The root of an Ossie file: the `version` it declares and how it is read and written.
+
+    `OssieSemanticModel` is a semantic model file and `OssieOntology` an ontology file.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -390,7 +378,7 @@ class OssieDocument(OssieSemanticModel):
         return self.model_dump_json(**kwargs)
 
     @classmethod
-    def from_ossie_yaml(cls, text: str) -> OssieDocument:
+    def from_ossie_yaml(cls, text: str) -> Self:
         """Parse an Ossie YAML document, checking what pydantic alone cannot.
 
         The counterpart of :meth:`to_ossie_yaml`. ``model_validate`` stays lenient,
@@ -417,7 +405,7 @@ class OssieDocument(OssieSemanticModel):
         return cls._from_document(yaml.load(text, Loader=UniqueKeyLoader))
 
     @classmethod
-    def from_ossie_json(cls, text: str) -> OssieDocument:
+    def from_ossie_json(cls, text: str) -> Self:
         """Parse an Ossie JSON document, checking what pydantic alone cannot.
 
         The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
@@ -426,7 +414,7 @@ class OssieDocument(OssieSemanticModel):
         return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
 
     @classmethod
-    def _from_document(cls, data: Any) -> OssieDocument:
+    def _from_document(cls, data: Any) -> Self:
         for reason in (_NULL, _NON_FINITE):
             paths = [path for path, why in _invalid_properties(data) if why == reason]
             if paths:
@@ -435,11 +423,24 @@ class OssieDocument(OssieSemanticModel):
                 if len(paths) > _MAX_REPORTED:
                     listed += f", and {len(paths) - _MAX_REPORTED} more"
                 raise ValueError(f"{reason}: {listed}")
-        if isinstance(data, dict) and "version" in cls.model_fields and "version" not in data:
+        if isinstance(data, dict) and "version" not in data:
             # The field carries a default so Python construction needs no version, but
             # the schema lists it as required, so a document without one is invalid.
             raise ValueError("document is missing the required property: version")
         return cls.model_validate(data)
+
+
+class OssieSemanticModel(OssieDocument):
+    """Semantic model: the datasets, relationships, and metrics for one business domain."""
+
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = None
+    ai_context: Optional[OssieAIContext] = None
+    datasets: list[OssieDataset] = Field(..., min_length=1)
+    relationships: Optional[list[OssieRelationship]] = None
+    # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
+    metrics: Optional[list[OssieMetric]] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
 def _require_any(model: BaseModel, *names: str) -> None:
@@ -601,16 +602,13 @@ class OssieOntologyMapping(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     # The schema embeds the whole core document here, `version` included.
-    semantic_model: OssieDocument
+    semantic_model: OssieSemanticModel
     concept_mappings: list[OssieConceptMapping]
 
 
-class OssieOntologyDocument(BaseModel):
+class OssieOntology(OssieDocument):
     """An ontology: concepts, the relationships among them, and their rules."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    version: OssieVersion = "0.2.0.dev0"
     name: str
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
