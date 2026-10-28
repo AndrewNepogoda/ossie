@@ -41,13 +41,13 @@ including keys in nested objects, so an earlier value is not silently lost.
 The YAML loader preserves aliases, repeated merge directives and explicit
 overrides of merged keys.
 
-`OssieOntology` mirrors `ontology/ontology.json`: concepts (`OssieConcept`),
+`OssieOntologyModel` mirrors `ontology/ontology.json`: concepts (`OssieConcept`),
 the relationships among them (`OssieOntologyRelationship`, distinct from the dataset
 join `OssieRelationship`), and, deprecated, embedded `ontology_mappings`.
 
-`OssieSemanticModel` and `OssieOntology` both extend `OssieDocument`, which holds
+`OssieSemanticModel` and `OssieOntologyModel` both extend `OssieDocument`, which holds
 `version` and the `to_ossie_*` and `from_ossie_*` methods. An ontology file
-therefore loads with `OssieOntology.from_ossie_yaml(text)`, under the same checks.
+therefore loads with `OssieOntologyModel.from_ossie_yaml(text)`, under the same checks.
 
 ## Development
 

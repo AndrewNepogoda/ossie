@@ -340,7 +340,7 @@ OssieVersion = Literal["0.2.0.dev0"]
 class OssieDocument(BaseModel):
     """The root of an Ossie file: the `version` it declares and how it is read and written.
 
-    `OssieSemanticModel` is a semantic model file and `OssieOntology` an ontology file.
+    `OssieSemanticModel` is a semantic model file and `OssieOntologyModel` an ontology file.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -606,7 +606,7 @@ class OssieOntologyMapping(BaseModel):
     concept_mappings: list[OssieConceptMapping]
 
 
-class OssieOntology(OssieDocument):
+class OssieOntologyModel(OssieDocument):
     """An ontology: concepts, the relationships among them, and their rules."""
 
     name: str
